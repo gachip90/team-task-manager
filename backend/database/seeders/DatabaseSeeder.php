@@ -4,8 +4,8 @@ namespace Database\Seeders;
 
 use App\Models\Task;
 use App\Models\User;
-// use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
@@ -15,52 +15,88 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        $admin = User::query()->updateOrCreate(
-            ['email' => 'admin@example.com'],
-            [
-                'name' => 'Admin User',
-                'password' => Hash::make('password'),
+        DB::transaction(function (): void {
+            Task::query()
+                ->whereIn('title', [
+                    'Prepare API contract',
+                    'Build task CRUD endpoints',
+                    'Review authorization rules',
+                    'Prepare sprint task list',
+                    'Implement task filters',
+                    'Review overdue tasks',
+                    'Update task statuses',
+                ])
+                ->delete();
+
+            User::query()
+                ->whereIn('id', [1, 2, 3])
+                ->orWhereIn('email', [
+                    'admin@example.com',
+                    'user@example.com',
+                    'user1@example.com',
+                    'user2@example.com',
+                ])
+                ->delete();
+
+            User::query()->create([
+                'id' => 1,
+                'name' => 'Admin',
+                'email' => 'admin@example.com',
+                'password' => Hash::make('Admin@123456'),
                 'role' => 'admin',
-            ],
-        );
+            ]);
 
-        $user = User::query()->updateOrCreate(
-            ['email' => 'user@example.com'],
-            [
-                'name' => 'Regular User',
-                'password' => Hash::make('password'),
+            $user1 = User::query()->create([
+                'id' => 2,
+                'name' => 'User1',
+                'email' => 'user1@example.com',
+                'password' => Hash::make('User1@123456'),
                 'role' => 'user',
-            ],
-        );
+            ]);
 
-        Task::query()->updateOrCreate(
-            ['title' => 'Prepare API contract'],
-            [
-                'description' => 'Draft the initial REST API contract for task management.',
+            $user2 = User::query()->create([
+                'id' => 3,
+                'name' => 'User2',
+                'email' => 'user2@example.com',
+                'password' => Hash::make('User2@123456'),
+                'role' => 'user',
+            ]);
+
+            Task::query()->create([
+                'title' => 'Prepare sprint task list',
+                'description' => 'Create the task list for the upcoming sprint planning session.',
                 'status' => 'todo',
-                'assigned_to' => $admin->id,
+                'assigned_to' => $user1->id,
                 'due_date' => now()->addDays(2)->toDateString(),
-            ],
-        );
+            ]);
 
-        Task::query()->updateOrCreate(
-            ['title' => 'Build task CRUD endpoints'],
-            [
-                'description' => 'Implement create, update, list, and delete endpoints.',
+            Task::query()->create([
+                'title' => 'Implement task filters',
+                'description' => 'Wire up status filtering and title search for the task screen.',
                 'status' => 'in_progress',
-                'assigned_to' => $user->id,
+                'assigned_to' => $user1->id,
                 'due_date' => now()->addDays(5)->toDateString(),
-            ],
-        );
+            ]);
 
-        Task::query()->updateOrCreate(
-            ['title' => 'Review authorization rules'],
-            [
-                'description' => 'Verify admin and user task permissions.',
+            Task::query()->create([
+                'title' => 'Review overdue tasks',
+                'description' => 'Check stale tasks and update their due dates where needed.',
+                'status' => 'todo',
+                'assigned_to' => $user2->id,
+                'due_date' => now()->addDays(3)->toDateString(),
+            ]);
+
+            Task::query()->create([
+                'title' => 'Update task statuses',
+                'description' => 'Move completed work to done and keep in-progress tasks current.',
                 'status' => 'done',
-                'assigned_to' => $user->id,
+                'assigned_to' => $user2->id,
                 'due_date' => null,
-            ],
-        );
+            ]);
+        });
+
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE users AUTO_INCREMENT = 4');
+        }
     }
 }
