@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { api } from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
-import type { Task, TaskPayload, TaskStatus } from '@/types/api'
+import type { ApiDataResponse, Task, TaskPayload, TaskStatus, User } from '@/types/api'
 
 const props = defineProps<{
   modelValue: boolean
@@ -34,16 +35,32 @@ const form = reactive<{
   assigned_to: null,
   due_date: '',
 })
+const assignees = ref<User[]>([])
+const isLoadingAssignees = ref(false)
+const isDateMenuOpen = ref(false)
+const selectedDueDate = ref<Date | null>(null)
 
 const dialogTitle = computed(() => (props.task ? 'Edit task' : 'Create task'))
 const canEditAssignee = computed(() => authStore.user?.role === 'admin')
-const canSave = computed(() => form.title.trim() !== '' && form.description.trim() !== '')
+const assigneeOptions = computed(() =>
+  assignees.value.map((user) => ({
+    title: user.name,
+    value: user.id,
+  })),
+)
+const canSave = computed(
+  () =>
+    form.title.trim() !== '' &&
+    form.description.trim() !== '' &&
+    (!canEditAssignee.value || form.assigned_to !== null),
+)
 
 watch(
   () => props.modelValue,
   (isOpen) => {
     if (isOpen) {
       fillForm()
+      void fetchAssignees()
     }
   },
 )
@@ -52,12 +69,60 @@ function fillForm(): void {
   form.title = props.task?.title ?? ''
   form.description = props.task?.description ?? ''
   form.status = props.task?.status ?? 'todo'
-  form.assigned_to = props.task?.assigned_to ?? authStore.user?.id ?? null
+  form.assigned_to = props.task?.assigned_to ?? (canEditAssignee.value ? 2 : authStore.user?.id ?? null)
   form.due_date = props.task?.due_date ?? ''
+  selectedDueDate.value = form.due_date ? parseDate(form.due_date) : null
 }
 
 function closeDialog(): void {
   emit('update:modelValue', false)
+}
+
+async function fetchAssignees(): Promise<void> {
+  if (!canEditAssignee.value || assignees.value.length > 0) {
+    return
+  }
+
+  isLoadingAssignees.value = true
+
+  try {
+    const { data } = await api.get<ApiDataResponse<User[]>>('/users')
+    assignees.value = data.data
+
+    if (form.assigned_to === null && data.data[0]) {
+      form.assigned_to = data.data[0].id
+    }
+  } finally {
+    isLoadingAssignees.value = false
+  }
+}
+
+function parseDate(date: string): Date {
+  const [year, month, day] = date.split('-').map(Number)
+
+  if (!year || !month || !day) {
+    return new Date()
+  }
+
+  return new Date(year, month - 1, day)
+}
+
+function formatDateForApi(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+function updateDueDate(date: Date | null): void {
+  selectedDueDate.value = date
+  form.due_date = date ? formatDateForApi(date) : ''
+  isDateMenuOpen.value = false
+}
+
+function clearDueDate(): void {
+  updateDueDate(null)
 }
 
 function submitForm(): void {
@@ -112,15 +177,34 @@ function submitForm(): void {
               variant="outlined"
             />
 
-            <v-text-field v-model="form.due_date" label="Due date" type="date" variant="outlined" />
+            <v-menu v-model="isDateMenuOpen" :close-on-content-click="false" min-width="auto">
+              <template #activator="{ props: menuProps }">
+                <v-text-field
+                  v-bind="menuProps"
+                  :model-value="form.due_date"
+                  append-inner-icon="mdi-calendar"
+                  clearable
+                  label="Due date"
+                  readonly
+                  variant="outlined"
+                  @click:clear="clearDueDate"
+                />
+              </template>
+
+              <v-date-picker
+                :model-value="selectedDueDate"
+                title="Select due date"
+                @update:model-value="updateDueDate"
+              />
+            </v-menu>
           </div>
 
-          <v-text-field
+          <v-select
             v-if="canEditAssignee"
-            v-model.number="form.assigned_to"
-            label="Assignee user ID"
-            min="1"
-            type="number"
+            v-model="form.assigned_to"
+            :items="assigneeOptions"
+            :loading="isLoadingAssignees"
+            label="Assignee"
             variant="outlined"
           />
         </v-form>
